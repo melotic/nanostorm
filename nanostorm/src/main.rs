@@ -1,17 +1,22 @@
-use std::{thread, time::Duration, path::{Path, PathBuf}};
+#[macro_use]
+mod log;
+mod ghidra_runner;
 
+use std::path::{Path, PathBuf};
+use color_eyre::owo_colors::OwoColorize;
 use clap::Parser;
 use color_eyre::eyre::{Result, eyre};
-use indicatif::ProgressBar;
+
+use crate::ghidra_runner::run_ghidra_disassembly;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
 struct Args {
     #[clap(short, long)]
-    ghidra_path: String,
+    ghidra_path: PathBuf,
 
     #[clap()]
-    binary: String,
+    binary: PathBuf,
 
     #[clap(short, long)]
     output: Option<String>
@@ -19,8 +24,8 @@ struct Args {
 
 #[derive(Debug)]
 struct ParsedArgs {
-    ghidra_path: String,
-    binary: String,
+    ghidra_path: PathBuf,
+    binary: PathBuf,
     output: String
 }
 
@@ -28,7 +33,7 @@ impl From<Args> for ParsedArgs {
     fn from(args: Args) -> Self {
         let output = match args.output {
             Some(o) => o,
-            None => args.binary.clone()
+            None => args.binary.file_name().unwrap().to_str().unwrap().to_string()
         };
         ParsedArgs {
             ghidra_path: args.ghidra_path,
@@ -38,9 +43,14 @@ impl From<Args> for ParsedArgs {
     }
 }
 
-fn find_headless_ghidra(ghidra_path: &str) -> Result<PathBuf> {
-    let ghidra_path = Path::new(ghidra_path);
-    let ghidra_headless = ghidra_path.join("support/analyzeHeadless");
+fn find_headless_ghidra(ghidra_path: &Path) -> Result<PathBuf> {
+    let bin_name= if cfg!(target_os = "windows") {
+        "analyzeHeadless.bat"
+    } else {
+        "analyzeHeadless"
+    };
+
+    let ghidra_headless = ghidra_path.join("support").join(bin_name);
 
     if !ghidra_headless.exists() {
         Err(eyre!("analyzeHeadless not found. Did you specify the correct Ghidra path?"))
@@ -54,13 +64,13 @@ fn main() -> Result<()> {
 
     let cli = ParsedArgs::from(Args::parse());
 
-    println!("[*] Starting nanostorm...");
-    println!("[*] Ghidra path: {}", cli.ghidra_path);
-    println!("[*] Binary path: {}", cli.binary);
-    println!("\n[*] Locating ghidra");
+    if !Path::exists(&cli.binary) {
+        return Err(eyre!("Binary does not exist"));
+    }
 
     let ghidra_headless = find_headless_ghidra(&cli.ghidra_path)?;
-    println!("[DEBUG] Ghidra headless path: {:?}", ghidra_headless);
+    success!("Ghidra headless path: {:?}", ghidra_headless);
 
+    run_ghidra_disassembly(&ghidra_headless, &cli.binary)?;
     Ok(())
 }

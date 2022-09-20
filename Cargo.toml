@@ -3,3 +3,4 @@ members=[
     "nanostorm",
     "stub"
 ]
+default-run="nanostorm"
