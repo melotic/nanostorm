@@ -71,6 +71,8 @@ fn main() -> Result<()> {
     let ghidra_headless = find_headless_ghidra(&cli.ghidra_path)?;
     success!("Ghidra headless path: {:?}", ghidra_headless);
 
-    run_ghidra_disassembly(&ghidra_headless, &cli.binary)?;
+    let intrs = run_ghidra_disassembly(&ghidra_headless, &cli.binary)?;
+
+    //print!("{:?}", intrs);
     Ok(())
 }
