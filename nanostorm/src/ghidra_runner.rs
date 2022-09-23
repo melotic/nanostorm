@@ -49,11 +49,17 @@ pub fn run_ghidra_disassembly(ghidra_bin: &PathBuf, binary: &PathBuf) -> Result<
     // print to console
     let mut reader = BufReader::new(out);
     let mut line = String::new();
-    while reader.read_line(&mut line).unwrap() > 0 {
+    while let Ok(n) = reader.read_line(&mut line) {
+        if n == 0 {
+            break;
+        }
+
         // Don't spam console with ghidra script output
-        if !line.contains("(GhidraScript)") {
+        if !line.trim().ends_with("(GhidraScript)") {
             pb.println(&line);
         }
+
+        line.clear();
     }
 
     pb.finish_with_message(format!("{}", "Ghidra analysis complete.".bold()));

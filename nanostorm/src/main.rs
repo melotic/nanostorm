@@ -1,13 +1,17 @@
 #[macro_use]
 mod log;
 mod ghidra_runner;
+mod vaddr_lookup;
 
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, fs::{File, self}};
 use color_eyre::owo_colors::OwoColorize;
 use clap::Parser;
 use color_eyre::eyre::{Result, eyre};
+use goblin::Object;
+use vaddr_lookup::VirtualAddressor;
 
 use crate::ghidra_runner::run_ghidra_disassembly;
+use crate::vaddr_lookup::{ElfVirtualAddressor, PeVirtualAddressor};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
@@ -55,6 +59,7 @@ fn find_headless_ghidra(ghidra_path: &Path) -> Result<PathBuf> {
     if !ghidra_headless.exists() {
         Err(eyre!("analyzeHeadless not found. Did you specify the correct Ghidra path?"))
     } else {
+        success!("Ghidra headless path: {:?}", ghidra_headless);
         Ok(ghidra_headless)
     }
 }
@@ -69,10 +74,21 @@ fn main() -> Result<()> {
     }
 
     let ghidra_headless = find_headless_ghidra(&cli.ghidra_path)?;
-    success!("Ghidra headless path: {:?}", ghidra_headless);
-
     let intrs = run_ghidra_disassembly(&ghidra_headless, &cli.binary)?;
+    let buffer = fs::read(cli.binary)?;
 
-    //print!("{:?}", intrs);
+    {
+        let vaddr_lookup : Box<dyn VirtualAddressor>= match Object::parse(&buffer)? {
+            Object::Elf(elf)=> Ok(Box::new(ElfVirtualAddressor::new(elf)) as Box<dyn VirtualAddressor>),
+            Object::PE(pe) => Ok(Box::new(PeVirtualAddressor::new(pe)) as Box<dyn VirtualAddressor>),
+            _ => Err(eyre!("Unsupported binary format"))
+        }?;
+
+        vaddr_lookup.virtual_address(0x10000);
+    }
+    
+
+    
+    
     Ok(())
 }
