@@ -3,11 +3,17 @@ mod log;
 mod ghidra_runner;
 mod vaddr_lookup;
 
-use std::{path::{Path, PathBuf}, fs::{File, self}};
-use color_eyre::owo_colors::OwoColorize;
 use clap::Parser;
-use color_eyre::eyre::{Result, eyre};
+use color_eyre::eyre::{eyre, Result};
+use color_eyre::{eyre::Context, owo_colors::OwoColorize};
+use ghidra_runner::InstrLocations;
 use goblin::Object;
+
+use rayon::prelude::*;
+use std::{
+    fs::{self},
+    path::{Path, PathBuf},
+};
 use vaddr_lookup::VirtualAddressor;
 
 use crate::ghidra_runner::run_ghidra_disassembly;
@@ -23,32 +29,38 @@ struct Args {
     binary: PathBuf,
 
     #[clap(short, long)]
-    output: Option<String>
+    output: Option<String>,
 }
 
 #[derive(Debug)]
 struct ParsedArgs {
     ghidra_path: PathBuf,
     binary: PathBuf,
-    output: String
+    output: String,
 }
 
 impl From<Args> for ParsedArgs {
     fn from(args: Args) -> Self {
         let output = match args.output {
             Some(o) => o,
-            None => args.binary.file_name().unwrap().to_str().unwrap().to_string()
+            None => args
+                .binary
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string(),
         };
         ParsedArgs {
             ghidra_path: args.ghidra_path,
             binary: args.binary,
-            output
+            output,
         }
     }
 }
 
 fn find_headless_ghidra(ghidra_path: &Path) -> Result<PathBuf> {
-    let bin_name= if cfg!(target_os = "windows") {
+    let bin_name = if cfg!(target_os = "windows") {
         "analyzeHeadless.bat"
     } else {
         "analyzeHeadless"
@@ -57,7 +69,9 @@ fn find_headless_ghidra(ghidra_path: &Path) -> Result<PathBuf> {
     let ghidra_headless = ghidra_path.join("support").join(bin_name);
 
     if !ghidra_headless.exists() {
-        Err(eyre!("analyzeHeadless not found. Did you specify the correct Ghidra path?"))
+        Err(eyre!(
+            "analyzeHeadless not found. Did you specify the correct Ghidra path?"
+        ))
     } else {
         success!("Ghidra headless path: {:?}", ghidra_headless);
         Ok(ghidra_headless)
@@ -68,27 +82,36 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let cli = ParsedArgs::from(Args::parse());
+    let mut buffer = fs::read(&cli.binary)
+        .wrap_err_with(|| format!("Could not read {}", cli.binary.display()))?;
+    let intrs = run_ghidra_disassembly(&find_headless_ghidra(&cli.ghidra_path)?, &cli.binary)?;
 
-    if !Path::exists(&cli.binary) {
-        return Err(eyre!("Binary does not exist"));
+    process_binary(&mut buffer, &intrs, &cli.output)?;
+
+    Ok(())
+}
+
+fn create_vaddr_lookup<'a>(buffer: &'a [u8]) -> Result<Box<dyn VirtualAddressor + Sync + 'a>> {
+    let obj = Object::parse(buffer).wrap_err_with(|| "Error parsing the binary file.")?;
+
+    match obj {
+        Object::Elf(elf) => Ok(Box::new(ElfVirtualAddressor::new(elf))),
+        Object::PE(pe) => Ok(Box::new(PeVirtualAddressor::new(pe))),
+        _ => Err(eyre!("Could not parse binary as a PE or ELF file.",)),
     }
+}
 
-    let ghidra_headless = find_headless_ghidra(&cli.ghidra_path)?;
-    let intrs = run_ghidra_disassembly(&ghidra_headless, &cli.binary)?;
-    let buffer = fs::read(cli.binary)?;
 
-    {
-        let vaddr_lookup : Box<dyn VirtualAddressor>= match Object::parse(&buffer)? {
-            Object::Elf(elf)=> Ok(Box::new(ElfVirtualAddressor::new(elf)) as Box<dyn VirtualAddressor>),
-            Object::PE(pe) => Ok(Box::new(PeVirtualAddressor::new(pe)) as Box<dyn VirtualAddressor>),
-            _ => Err(eyre!("Unsupported binary format"))
-        }?;
+fn process_binary(buffer: &mut [u8], instrs: &InstrLocations, _output: &str) -> Result<()> {
+    // map all instrs to their offsets in the binary
+    let vaddr_lookup = create_vaddr_lookup(buffer)?;
 
-        vaddr_lookup.virtual_address(0x10000);
-    }
-    
+    let offsets: Vec<usize> = instrs
+        .into_par_iter()
+        .filter_map(|vaddr| vaddr_lookup.virtual_address(*vaddr).ok())
+        .collect();
 
-    
-    
+    info!("Found {} instructions", offsets.len());
+
     Ok(())
 }

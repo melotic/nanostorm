@@ -3,15 +3,16 @@ use color_eyre::{eyre::ContextCompat, owo_colors::OwoColorize, Result};
 use indicatif::ProgressBar;
 use std::{
     env::current_dir,
+    fs::{self, File},
     io::{BufRead, BufReader},
     path::PathBuf,
     process::{Command, Stdio},
-    time::Duration, fs::File,
+    time::Duration,
 };
+use uuid::Uuid;
 
 ///  Provides virtual address of where addresses are located in the binary.
-#[derive(Debug)]
-pub struct InstrLocations(Vec<usize>);
+pub type InstrLocations = Vec<usize>;
 
 pub fn run_ghidra_disassembly(ghidra_bin: &PathBuf, binary: &PathBuf) -> Result<InstrLocations> {
     let pb = ProgressBar::new_spinner();
@@ -19,7 +20,9 @@ pub fn run_ghidra_disassembly(ghidra_bin: &PathBuf, binary: &PathBuf) -> Result<
     pb.enable_steady_tick(Duration::from_millis(250));
 
     let tmp_dir = std::env::temp_dir();
-    let script_output = tmp_dir.join("script_output.txt");
+
+    // generate a uuid as a random file name
+    let script_output = tmp_dir.join(Uuid::new_v4().to_string());
 
     let proj_name = binary
         .file_name()
@@ -40,6 +43,7 @@ pub fn run_ghidra_disassembly(ghidra_bin: &PathBuf, binary: &PathBuf) -> Result<
         .arg("-scriptLog")
         .arg(script_output.as_os_str())
         .arg("-deleteProject")
+        //.arg("-noanalysis")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;
@@ -65,15 +69,24 @@ pub fn run_ghidra_disassembly(ghidra_bin: &PathBuf, binary: &PathBuf) -> Result<
     pb.finish_with_message(format!("{}", "Ghidra analysis complete.".bold()));
 
     let status = cmd.wait()?;
+
     if !status.success() {
         return Err(eyre!("Ghidra disassembly failed"));
     }
 
-    parse_ghidra_output(&script_output)
+    let output = parse_ghidra_output(&script_output);
+
+    if fs::remove_file(&script_output).is_err() {
+        warning!(
+            "Failed to remove tempory Ghidra file {}. Manual cleanup required.",
+            script_output.display()
+        );
+    }
+
+    output
 }
 
 fn parse_ghidra_output(script_output: &PathBuf) -> Result<InstrLocations> {
-  
     let pb = ProgressBar::new_spinner();
     pb.set_message(format!("{}", "Parsing Ghidra output".bold()));
     pb.enable_steady_tick(Duration::from_millis(250));
@@ -88,11 +101,11 @@ fn parse_ghidra_output(script_output: &PathBuf) -> Result<InstrLocations> {
             if let Some(addr) = line.split_whitespace().last() {
                 let addr = usize::from_str_radix(addr, 16)?;
                 instrs.push(addr);
-            }   
+            }
         }
     }
 
     pb.finish_with_message(format!("{}", "Ghidra output parsed.".bold()));
 
-    Ok(InstrLocations(instrs))
+    Ok(instrs)
 }
