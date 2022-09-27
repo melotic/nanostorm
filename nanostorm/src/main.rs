@@ -8,12 +8,13 @@ use color_eyre::eyre::{eyre, Result};
 use color_eyre::{eyre::Context, owo_colors::OwoColorize};
 use ghidra_runner::InstrLocations;
 use goblin::Object;
+use iced_x86::code_asm::CodeAssembler;
 use iced_x86::{
     Decoder, DecoderOptions, FlowControl, Formatter, Instruction, Mnemonic, NasmFormatter,
 };
-use libnanomite::{JumpData, JumpDataTable, JumpType};
+use libnanomite::{JumpData, JumpDataTable, JumpType, VirtAddr};
+use rand::random;
 use rayon::prelude::*;
-use std::mem;
 use std::{
     fs::{self},
     path::{Path, PathBuf},
@@ -110,6 +111,7 @@ fn process_binary<'a>(
     instrs: &'a InstrLocations,
     _output: &str,
 ) -> Result<()> {
+    info!("Ghidra reported {} instructions", instrs.len());
     let offsets = get_offsets(buffer, instrs)?;
 
     info!("Found {} instructions", offsets.len());
@@ -118,7 +120,7 @@ fn process_binary<'a>(
     Ok(())
 }
 
-fn get_offsets(buffer: &mut [u8], instrs: &Vec<usize>) -> Result<Vec<(usize, usize)>> {
+fn get_offsets(buffer: &mut [u8], instrs: &Vec<usize>) -> Result<Vec<(VirtAddr, usize)>> {
     let vaddr_lookup = create_vaddr_lookup(buffer)?;
     let offsets: Vec<(usize, usize)> = instrs
         .into_par_iter()
@@ -126,15 +128,15 @@ fn get_offsets(buffer: &mut [u8], instrs: &Vec<usize>) -> Result<Vec<(usize, usi
             vaddr_lookup
                 .virtual_address(*vaddr)
                 .ok()
-                .map(|o| (o, *vaddr))
+                .map(|o| (*vaddr, o))
         })
         .collect();
     Ok(offsets)
 }
 
 fn process_instructions(buffer: &mut [u8], offsets: &[(usize, usize)]) -> Result<()> {
-    // Since we're modifying the buffer which contains instructions, pass the buffer
-    // a copy that we wont modify with nanomites.
+    // Since we're modifying the buffer by placing nanomites, create a copy so we can
+    // decode correctly.
     let buf_copy = buffer.to_owned();
     let mut decoder = Decoder::new(64, &buf_copy, DecoderOptions::NONE);
 
@@ -161,11 +163,14 @@ fn process_instructions(buffer: &mut [u8], offsets: &[(usize, usize)]) -> Result
         let mut nanomite = None;
 
         // TODO: add nanomites for jmp rel8/16/32
-        if instr.flow_control() == FlowControl::ConditionalBranch && !instr.is_loopcc() {
+        if instr.flow_control() == FlowControl::ConditionalBranch
+            && !instr.is_loopcc()
+            && !instr.is_loop()
+        {
             nanomite = Some(place_nanomite(buffer, *offset, &instr)?);
             info!("nanomite: {:X} {}", *vaddr, output);
         } else if buffer[*offset..*offset + instr.len()].contains(&0xCC) {
-            nanomite = Some(place_fake_nanomite());
+            nanomite = Some(place_fake_nanomite()?);
             warning!("fake nanomite: {:X} {}", *vaddr, output);
         }
 
@@ -177,23 +182,42 @@ fn process_instructions(buffer: &mut [u8], offsets: &[(usize, usize)]) -> Result
     Ok(())
 }
 
-fn place_fake_nanomite() -> JumpData {
-    // generate random jump type
-    let jump_type = rand::random::<JumpType>();
-    let target = rand::random::<u32>() as usize;
+fn place_fake_nanomite() -> Result<JumpData> {
+    // create a real jcc instruction, and then encode it.
+    let jump_type: JumpType = random();
 
-    let mut zero_bytes = 0;
-    for i in 0..mem::size_of::<u32>() {
-        if target & (0xFF << (i * 8)) == 0 {
-            zero_bytes += 1;
-        } else {
-            break;
-        }
-    }
+    let mut asm = CodeAssembler::new(64)?;
+    let target = random::<u64>() % i8::MAX as u64;
 
-    let size = rand::random::<usize>() % (mem::size_of::<u32>() - zero_bytes) + 1;
+    match jump_type {
+        JumpType::Ja => asm.ja(target)?,
+        JumpType::Jae => asm.jae(target)?,
+        JumpType::Jb => asm.jb(target)?,
+        JumpType::Jbe => asm.jbe(target)?,
+        JumpType::Jcxz => asm.jcxz(target)?,
+        JumpType::Je => asm.je(target)?,
+        JumpType::Jecxz => asm.jecxz(target)?,
+        JumpType::Jg => asm.jg(target)?,
+        JumpType::Jge => asm.jge(target)?,
+        JumpType::Jl => asm.jl(target)?,
+        JumpType::Jle => asm.jle(target)?,
+        JumpType::Jmp => asm.jmp(target)?,
+        JumpType::Jmpe => asm.jmpe(target)?,
+        JumpType::Jne => asm.jne(target)?,
+        JumpType::Jno => asm.jno(target)?,
+        JumpType::Jnp => asm.jnp(target)?,
+        JumpType::Jns => asm.jns(target)?,
+        JumpType::Jo => asm.jo(target)?,
+        JumpType::Jp => asm.jp(target)?,
+        JumpType::Jrcxz => asm.jrcxz(target)?,
+        JumpType::Js => asm.js(target)?,
+    };
 
-    JumpData::new(jump_type, size as u8, size as isize)
+    let bytes = asm.assemble(0x0)?;
+    let jd = JumpData::new(jump_type, bytes.len() as u8, target as isize);
+
+    warning!("fake nanomite: {:?}", jd);
+    Ok(jd)
 }
 
 fn convert_jump_type(mnemonic: Mnemonic) -> Result<JumpType> {
@@ -227,15 +251,17 @@ fn place_nanomite(buffer: &mut [u8], offset: usize, instr: &Instruction) -> Resu
     let nanomite = JumpData::new(
         convert_jump_type(instr.mnemonic())?,
         instr.len() as u8,
-        instr.near_branch64() as isize,
+        instr.near_branch64().wrapping_sub(instr.ip()) as isize,
     );
+
+    info!("nanomite: {:?}", nanomite);
 
     // Place the nanomite
     buffer[offset] = 0xcc;
 
     // Replace rest of bytes with garbage
     for i in 1..instr.len() {
-        buffer[offset + i] = rand::random();
+        buffer[offset + i] = random();
     }
 
     Ok(nanomite)

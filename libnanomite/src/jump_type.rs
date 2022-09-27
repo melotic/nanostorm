@@ -1,6 +1,6 @@
 use bincode::{Decode, Encode};
 
-#[derive(Encode, Decode, Copy, Clone)]
+#[derive(Encode, Decode, Copy, Clone, Debug)]
 pub enum JumpType {
     Ja,
     Jae,

@@ -2,7 +2,7 @@ use bincode::{Decode, Encode};
 
 use crate::jump_type::JumpType;
 
-#[derive(Encode, Decode, Copy, Clone)]
+#[derive(Encode, Decode, Copy, Clone, Debug)]
 pub struct JumpData {
     jump_type: JumpType,
     j_false: u8,
