@@ -8,8 +8,10 @@ use color_eyre::eyre::{eyre, Result};
 use color_eyre::{eyre::Context, owo_colors::OwoColorize};
 use ghidra_runner::InstrLocations;
 use goblin::Object;
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction};
+use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic};
+use libnanomite::{JumpData, JumpType};
 use rayon::prelude::*;
+use std::mem;
 use std::{
     fs::{self},
     path::{Path, PathBuf},
@@ -107,7 +109,7 @@ fn process_binary<'a>(
     _output: &str,
 ) -> Result<()> {
     // map all instrs to their offsets in the binary
-    let vaddr_lookup = create_vaddr_lookup(&buffer)?;
+    let vaddr_lookup = create_vaddr_lookup(buffer)?;
 
     let offsets: Vec<(usize, usize)> = instrs
         .into_par_iter()
@@ -126,7 +128,7 @@ fn process_binary<'a>(
 }
 
 fn process_instructions(buffer: &mut [u8], offsets: &[(usize, usize)]) -> Result<()> {
-    let mut decoder = Decoder::new(64, &buffer, DecoderOptions::NONE);
+    let mut decoder = Decoder::new(64, buffer, DecoderOptions::NONE);
 
     for (vaddr, offset) in offsets {
         decoder.set_position(*offset)?;
@@ -135,21 +137,79 @@ fn process_instructions(buffer: &mut [u8], offsets: &[(usize, usize)]) -> Result
         let instr = decoder.decode();
 
         // ensure the instruction is a conditional branch, but not a loop
+        let mut nanomite = None;
+
         if instr.flow_control() == FlowControl::ConditionalBranch && !instr.is_loopcc() {
-            place_nanomite(&mut buffer, *offset, &instr)?;
+            nanomite = Some(place_nanomite(buffer, *offset, &instr)?);
         } else if *&buffer[*offset..*offset + instr.len()].contains(&0xCC) {
             info!("Found breakpoint at offset: {:x}", offset);
-            place_fake_nanomite(&mut buffer, *offset)?;
+            nanomite = Some(place_fake_nanomite());
         }
     }
 
     Ok(())
 }
 
-fn place_fake_nanomite(buffer: &mut &mut [u8], offset: usize) -> _ {
-    todo!()
+fn place_fake_nanomite() -> JumpData {
+    // generate random jump type
+    let jump_type = rand::random::<JumpType>();
+    let target = rand::random::<u32>() as usize;
+
+    let mut zero_bytes = 0;
+    for i in 0..mem::size_of::<u32>() {
+        if target & (0xFF << (i * 8)) == 0 {
+            zero_bytes += 1;
+        } else {
+            break;
+        }
+    }
+
+    let size = rand::random::<usize>() % (mem::size_of::<u32>() - zero_bytes) + 1;
+
+    JumpData::new(jump_type, size as u8, size as isize)
 }
 
-fn place_nanomite(buffer: &mut [u8], offset: usize, instr: &Instruction) -> _ {
-    todo!()    
+fn convert_jump_type(mnemonic: Mnemonic) -> Result<JumpType> {
+    match mnemonic {
+        Mnemonic::Ja => Ok(JumpType::Ja),
+        Mnemonic::Jae => Ok(JumpType::Jae),
+        Mnemonic::Jb => Ok(JumpType::Jb),
+        Mnemonic::Jbe => Ok(JumpType::Jbe),
+        Mnemonic::Jcxz => Ok(JumpType::Jcxz),
+        Mnemonic::Je => Ok(JumpType::Je),
+        Mnemonic::Jecxz => Ok(JumpType::Jecxz),
+        Mnemonic::Jg => Ok(JumpType::Jg),
+        Mnemonic::Jge => Ok(JumpType::Jge),
+        Mnemonic::Jl => Ok(JumpType::Jl),
+        Mnemonic::Jle => Ok(JumpType::Jle),
+        Mnemonic::Jmp => Ok(JumpType::Jmp),
+        Mnemonic::Jmpe => Ok(JumpType::Jmpe),
+        Mnemonic::Jne => Ok(JumpType::Jne),
+        Mnemonic::Jno => Ok(JumpType::Jno),
+        Mnemonic::Jnp => Ok(JumpType::Jnp),
+        Mnemonic::Jns => Ok(JumpType::Jns),
+        Mnemonic::Jo => Ok(JumpType::Jo),
+        Mnemonic::Jp => Ok(JumpType::Jp),
+        Mnemonic::Jrcxz => Ok(JumpType::Jrcxz),
+        Mnemonic::Js => Ok(JumpType::Js),
+        _ => Err(eyre!("Invalid jump type: {:?}", mnemonic)),
+    }
+}
+fn place_nanomite(buffer: &mut [u8], offset: usize, instr: &Instruction) -> Result<JumpData> {
+    // Create the nanomite
+    let nanomite = JumpData::new(
+        convert_jump_type(instr.mnemonic())?,
+        instr.len() as u8,
+        instr.near_branch64() as isize,
+    );
+
+    // Place the nanomite
+    buffer[offset] = 0xcc;
+
+    // Replace rest of bytes with garbage
+    for i in 1..instr.len() {
+        buffer[offset + i] = rand::random();
+    }
+
+    Ok(nanomite)
 }

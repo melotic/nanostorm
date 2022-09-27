@@ -501,6 +501,8 @@ dependencies = [
  "goblin",
  "iced-x86",
  "indicatif",
+ "libnanomite",
+ "rand",
  "rayon",
  "uuid",
 ]

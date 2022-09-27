@@ -15,3 +15,5 @@ iced-x86 = "1.17.0"
 indicatif = { version = "0.17.1", features = ["rayon"] }
 rayon = "1.5.3"
 uuid = { version = "1.1.2", features = ["v4"] }
+libnanomite = { path = "../libnanomite" }
+rand = "0.8.5"
