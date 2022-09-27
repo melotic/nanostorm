@@ -8,8 +8,10 @@ use color_eyre::eyre::{eyre, Result};
 use color_eyre::{eyre::Context, owo_colors::OwoColorize};
 use ghidra_runner::InstrLocations;
 use goblin::Object;
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic};
-use libnanomite::{JumpData, JumpType};
+use iced_x86::{
+    Decoder, DecoderOptions, FlowControl, Formatter, Instruction, Mnemonic, NasmFormatter,
+};
+use libnanomite::{JumpData, JumpDataTable, JumpType};
 use rayon::prelude::*;
 use std::mem;
 use std::{
@@ -108,9 +110,16 @@ fn process_binary<'a>(
     instrs: &'a InstrLocations,
     _output: &str,
 ) -> Result<()> {
-    // map all instrs to their offsets in the binary
-    let vaddr_lookup = create_vaddr_lookup(buffer)?;
+    let offsets = get_offsets(buffer, instrs)?;
 
+    info!("Found {} instructions", offsets.len());
+    process_instructions(buffer, &offsets)?;
+
+    Ok(())
+}
+
+fn get_offsets(buffer: &mut [u8], instrs: &Vec<usize>) -> Result<Vec<(usize, usize)>> {
+    let vaddr_lookup = create_vaddr_lookup(buffer)?;
     let offsets: Vec<(usize, usize)> = instrs
         .into_par_iter()
         .filter_map(|vaddr| {
@@ -120,30 +129,48 @@ fn process_binary<'a>(
                 .map(|o| (o, *vaddr))
         })
         .collect();
-
-    info!("Found {} instructions", offsets.len());
-    process_instructions(buffer, &offsets)?;
-
-    Ok(())
+    Ok(offsets)
 }
 
 fn process_instructions(buffer: &mut [u8], offsets: &[(usize, usize)]) -> Result<()> {
-    let mut decoder = Decoder::new(64, buffer, DecoderOptions::NONE);
+    // Since we're modifying the buffer which contains instructions, pass the buffer
+    // a copy that we wont modify with nanomites.
+    let buf_copy = buffer.to_owned();
+    let mut decoder = Decoder::new(64, &buf_copy, DecoderOptions::NONE);
+
+    let mut formatter = NasmFormatter::new();
+    let mut output = String::new();
+
+    formatter.options_mut().set_digit_separator("`");
+    formatter.options_mut().set_first_operand_char_index(10);
+
+    let mut instr = Instruction::default();
+
+    let mut jdt = JumpDataTable::new();
 
     for (vaddr, offset) in offsets {
         decoder.set_position(*offset)?;
         decoder.set_ip(*vaddr as u64);
 
-        let instr = decoder.decode();
+        decoder.decode_out(&mut instr);
+
+        output.clear();
+        formatter.format(&instr, &mut output);
 
         // ensure the instruction is a conditional branch, but not a loop
         let mut nanomite = None;
 
+        // TODO: add nanomites for jmp rel8/16/32
         if instr.flow_control() == FlowControl::ConditionalBranch && !instr.is_loopcc() {
             nanomite = Some(place_nanomite(buffer, *offset, &instr)?);
-        } else if *&buffer[*offset..*offset + instr.len()].contains(&0xCC) {
-            info!("Found breakpoint at offset: {:x}", offset);
+            info!("nanomite: {:X} {}", *vaddr, output);
+        } else if buffer[*offset..*offset + instr.len()].contains(&0xCC) {
             nanomite = Some(place_fake_nanomite());
+            warning!("fake nanomite: {:X} {}", *vaddr, output);
+        }
+
+        if let Some(n) = nanomite {
+            jdt.insert(*vaddr, n);
         }
     }
 

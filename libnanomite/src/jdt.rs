@@ -2,8 +2,7 @@ use alloc::vec::Vec;
 use bincode::{Decode, Encode};
 use hashbrown::HashMap;
 
-use crate::{VirtAddr, jump_data::JumpData};
-
+use crate::{jump_data::JumpData, VirtAddr};
 
 pub struct JumpDataTable {
     table: HashMap<VirtAddr, JumpData>,
@@ -50,5 +49,11 @@ impl JumpDataTable {
 
     pub fn get(&self, vaddr: VirtAddr) -> Option<&JumpData> {
         self.table.get(&vaddr)
+    }
+}
+
+impl Default for JumpDataTable {
+    fn default() -> Self {
+        Self::new()
     }
 }

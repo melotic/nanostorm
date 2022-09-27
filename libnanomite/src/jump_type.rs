@@ -1,4 +1,4 @@
-use bincode::{Encode, Decode};
+use bincode::{Decode, Encode};
 
 #[derive(Encode, Decode, Copy, Clone)]
 pub enum JumpType {

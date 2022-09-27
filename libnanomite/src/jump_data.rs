@@ -1,7 +1,6 @@
-use bincode::{Encode, Decode};
+use bincode::{Decode, Encode};
 
 use crate::jump_type::JumpType;
-
 
 #[derive(Encode, Decode, Copy, Clone)]
 pub struct JumpData {
