@@ -43,7 +43,7 @@ pub fn run_ghidra_disassembly(ghidra_bin: &PathBuf, binary: &PathBuf) -> Result<
         .arg("-scriptLog")
         .arg(script_output.as_os_str())
         .arg("-deleteProject")
-        //.arg("-noanalysis")
+        .arg("-overwrite")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;
@@ -99,7 +99,7 @@ fn parse_ghidra_output(script_output: &PathBuf) -> Result<InstrLocations> {
         let line = line?;
         if line.contains("INFO") {
             if let Some(addr) = line.split_whitespace().last() {
-                let addr = usize::from_str_radix(addr, 16)?;
+                let addr = usize::from_str_radix(addr, 10)?;
                 instrs.push(addr);
             }
         }

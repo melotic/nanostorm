@@ -20,8 +20,6 @@ impl<'a> PeVirtualAddressor<'a> {
 impl VirtualAddressor for PeVirtualAddressor<'_> {
     fn virtual_address(&self, vaddr: usize) -> Result<VirtAddr> {
         // Find the section the vaddr is in, then calculate the offset
-        let vaddr = vaddr - 0x10000000;
-
         let section = self
             .pe
             .sections
@@ -48,8 +46,6 @@ impl<'a> ElfVirtualAddressor<'a> {
 
 impl VirtualAddressor for ElfVirtualAddressor<'_> {
     fn virtual_address(&self, vaddr: usize) -> Result<VirtAddr> {
-        let vaddr = vaddr - 0x100000;
-
         // find the section that contains the vaddr
         let section = self
             .elf
