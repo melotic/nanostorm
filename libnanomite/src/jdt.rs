@@ -4,6 +4,7 @@ use hashbrown::HashMap;
 
 use crate::{jump_data::JumpData, VirtAddr};
 
+#[derive(Debug)]
 pub struct JumpDataTable {
     table: HashMap<VirtAddr, JumpData>,
 }
@@ -13,7 +14,7 @@ impl Decode for JumpDataTable {
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let vec = Vec::<(VirtAddr, JumpData)>::decode(decoder)?;
-        let mut hashmap = HashMap::new();
+        let mut hashmap = HashMap::with_capacity(vec.len());
 
         for (key, value) in vec {
             hashmap.insert(key, value);
@@ -28,7 +29,7 @@ impl Encode for JumpDataTable {
         &self,
         encoder: &mut E,
     ) -> Result<(), bincode::error::EncodeError> {
-        let mut vec = Vec::new();
+        let mut vec = Vec::with_capacity(self.table.len());
         for (addr, data) in self.table.iter() {
             vec.push((*addr, *data));
         }

@@ -2,11 +2,30 @@ use bincode::{Decode, Encode};
 
 use crate::jump_type::JumpType;
 
+pub struct RflagsBits;
+
+impl RflagsBits {
+    pub const OF: u64 = 0x0000_0001;
+
+    pub const SF: u64 = 0x0000_0002;
+
+    pub const ZF: u64 = 0x0000_0004;
+
+    pub const CF: u64 = 0x0000_0010;
+
+    pub const PF: u64 = 0x0000_0020;
+}
+
 #[derive(Encode, Decode, Copy, Clone, Debug)]
 pub struct JumpData {
     jump_type: JumpType,
     j_false: u8,
     j_true: isize,
+}
+
+#[inline]
+fn flag(eflags: u64, bit: u64) -> bool {
+    (eflags & bit) != 0
 }
 
 impl JumpData {
@@ -18,28 +37,34 @@ impl JumpData {
         }
     }
 
-    pub fn eval_jump(&self, eflags: usize, rcx: usize) -> isize {
+    pub fn eval_jump(&self, eflags: u64, rcx: u64) -> isize {
         // todo check this
         if match self.jump_type {
-            JumpType::Ja => eflags & 0x1 == 0x1,
-            JumpType::Jae => eflags & 0x1 == 0x1 || eflags & 0x40 == 0x40,
-            JumpType::Jb => eflags & 0x1 == 0x0,
-            JumpType::Jbe => eflags & 0x1 == 0x0 || eflags & 0x40 == 0x40,
-            JumpType::Jcxz | JumpType::Jecxz | JumpType::Jrcxz => rcx == 0,
-            JumpType::Je => eflags & 0x40 == 0x40,
-            JumpType::Jg => eflags & 0x1 == 0x1 && eflags & 0x40 == 0x0,
-            JumpType::Jge => eflags & 0x1 == 0x1 || eflags & 0x40 == 0x0,
-            JumpType::Jl => eflags & 0x1 == 0x0 && eflags & 0x40 == 0x40,
-            JumpType::Jle => eflags & 0x1 == 0x0 || eflags & 0x40 == 0x40,
             JumpType::Jmp => true,
-            JumpType::Jmpe => true,
-            JumpType::Jne => eflags & 0x40 == 0x0,
-            JumpType::Jno => eflags & 0x4 == 0x0,
-            JumpType::Jnp => eflags & 0x8 == 0x0,
-            JumpType::Jns => eflags & 0x2 == 0x0,
-            JumpType::Jo => eflags & 0x4 == 0x4,
-            JumpType::Jp => eflags & 0x8 == 0x8,
-            JumpType::Js => eflags & 0x2 == 0x2,
+            JumpType::Je => flag(eflags, RflagsBits::ZF),
+            JumpType::Jne => !flag(eflags, RflagsBits::ZF),
+            JumpType::Jb => flag(eflags, RflagsBits::CF),
+            JumpType::Ja => !flag(eflags, RflagsBits::CF) && !flag(eflags, RflagsBits::ZF),
+            JumpType::Jbe => flag(eflags, RflagsBits::CF) || flag(eflags, RflagsBits::ZF),
+            JumpType::Js => flag(eflags, RflagsBits::SF),
+            JumpType::Jns => !flag(eflags, RflagsBits::SF),
+            JumpType::Jp => flag(eflags, RflagsBits::PF),
+            JumpType::Jnp => !flag(eflags, RflagsBits::PF),
+            JumpType::Jl => flag(eflags, RflagsBits::SF) != flag(eflags, RflagsBits::OF),
+            JumpType::Jle => {
+                flag(eflags, RflagsBits::ZF)
+                    || (flag(eflags, RflagsBits::SF) != flag(eflags, RflagsBits::OF))
+            }
+            JumpType::Jcxz | JumpType::Jecxz | JumpType::Jrcxz => rcx == 0,
+            JumpType::Jae => !flag(eflags, RflagsBits::CF),
+            JumpType::Jg => {
+                !flag(eflags, RflagsBits::ZF)
+                    && (flag(eflags, RflagsBits::SF) == flag(eflags, RflagsBits::OF))
+            }
+            JumpType::Jge => flag(eflags, RflagsBits::SF) == flag(eflags, RflagsBits::OF),
+            JumpType::Jmpe => false,
+            JumpType::Jno => !flag(eflags, RflagsBits::OF),
+            JumpType::Jo => flag(eflags, RflagsBits::OF),
         } {
             self.j_true
         } else {

@@ -1,1 +1,0 @@
-./analyzeHeadless $(mktemp -d) testproj11111 -import ~/dev/nanostorm/target/debug/nanostorm -postScript ~/dev/nanostorm/res/get_disassembly.py -scriptLog /tmp/script_log.txt -deleteProject

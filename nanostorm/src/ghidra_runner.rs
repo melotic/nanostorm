@@ -99,7 +99,7 @@ fn parse_ghidra_output(script_output: &PathBuf) -> Result<InstrLocations> {
         let line = line?;
         if line.contains("INFO") {
             if let Some(addr) = line.split_whitespace().last() {
-                let addr = usize::from_str_radix(addr, 10)?;
+                let addr = addr.parse()?;
                 instrs.push(addr);
             }
         }
