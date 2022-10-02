@@ -1,3 +1,3 @@
 use libnanomite::JumpDataTable;
 
-pub fn run(bin: &[u8], jdt: JumpDataTable) {}
+pub fn run(_bin: &[u8], _jdt: JumpDataTable) {}

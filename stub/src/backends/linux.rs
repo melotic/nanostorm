@@ -32,7 +32,6 @@ fn parent(pid: Pid, jdt: JumpDataTable) {
     // wait for breakpoints
     loop {
         let status = waitpid(pid, None).unwrap();
-        dbg!(status);
         match status {
             WaitStatus::Stopped(_, Signal::SIGSEGV) => break,
             WaitStatus::Stopped(pid, Signal::SIGTRAP) => {
@@ -56,19 +55,21 @@ fn parent_get_vaddr(pid: Pid) -> u64 {
 
 fn parent_handle_breakpoint(pid: Pid, base_addr: u64, jdt: &JumpDataTable) {
     let mut regs = ptrace::getregs(pid).unwrap();
-    // regs.rip -= 1;
-    dbg!(regs);
 
     // check if the ip is in the jdt
     if let Some(nanomite) = jdt.get((regs.rip - base_addr - 1) as usize) {
-        eprintln!("offset: 0x{:X}", regs.rip - base_addr - 1);
-        dbg!(nanomite);
         let rip_offset = nanomite.eval_jump(regs.eflags, regs.rcx);
-        dbg!(rip_offset);
-
         regs.rip = (regs.rip as isize + rip_offset as isize - 1) as u64;
         ptrace::setregs(pid, regs).unwrap();
     }
+}
+
+fn format_env(key: &str, value: &str) -> Option<CString> {
+    let mut s = String::with_capacity(key.len() + value.len() + 2);
+    s.push_str(key);
+    s.push('=');
+    s.push_str(value);
+    CString::new(s).ok()
 }
 
 fn child(bin: &[u8]) {
@@ -79,8 +80,6 @@ fn child(bin: &[u8]) {
     // creaate a new fd
     let fd = memfd_create(&str, MemFdCreateFlag::empty()).unwrap();
 
-    dbg!(fd);
-
     // write the binary to the fd
     write(fd, bin).unwrap();
 
@@ -89,7 +88,7 @@ fn child(bin: &[u8]) {
         .collect::<Vec<_>>();
 
     let env = std::env::vars()
-        .filter_map(|(k, v)| CString::new(format!("{}={}", k, v)).ok())
+        .filter_map(|(k, v)| format_env(&k, &v))
         .collect::<Vec<_>>();
 
     let _ = fexecve(fd, &args, &env);

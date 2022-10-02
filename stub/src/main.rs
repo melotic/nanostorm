@@ -1,6 +1,6 @@
 #![no_std]
 
-use bincode::config::{self, Config};
+use bincode::config::{self};
 use stub::runtime_main;
 
 fn main() {

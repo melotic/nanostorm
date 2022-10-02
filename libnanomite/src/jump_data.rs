@@ -2,20 +2,17 @@ use bincode::{Decode, Encode};
 
 use crate::jump_type::JumpType;
 
-pub struct RflagsBits;
-
-impl RflagsBits {
-    pub const OF: u64 = 0x0000_0001;
-
-    pub const SF: u64 = 0x0000_0002;
-
-    pub const ZF: u64 = 0x0000_0004;
-
-    pub const CF: u64 = 0x0000_0010;
-
-    pub const PF: u64 = 0x0000_0020;
+pub enum Flags {
+    CarryFlag = 0x0001,
+    ParityFlag = 0x0004,
+    AdjustFlag = 0x0010,
+    ZeroFlag = 0x0040,
+    SignFlag = 0x0080,
+    TrapFlag = 0x0100,
+    InterruptEnableFlag = 0x0200,
+    DirectionFlag = 0x0400,
+    OverflowFlag = 0x0800,
 }
-
 #[derive(Encode, Decode, Copy, Clone, Debug)]
 pub struct JumpData {
     jump_type: JumpType,
@@ -24,8 +21,8 @@ pub struct JumpData {
 }
 
 #[inline]
-fn flag(eflags: u64, bit: u64) -> bool {
-    (eflags & bit) != 0
+fn flag(eflags: u64, bit: Flags) -> bool {
+    (eflags & (bit as u64)) != 0
 }
 
 impl JumpData {
@@ -41,30 +38,30 @@ impl JumpData {
         // todo check this
         if match self.jump_type {
             JumpType::Jmp => true,
-            JumpType::Je => flag(eflags, RflagsBits::ZF),
-            JumpType::Jne => !flag(eflags, RflagsBits::ZF),
-            JumpType::Jb => flag(eflags, RflagsBits::CF),
-            JumpType::Ja => !flag(eflags, RflagsBits::CF) && !flag(eflags, RflagsBits::ZF),
-            JumpType::Jbe => flag(eflags, RflagsBits::CF) || flag(eflags, RflagsBits::ZF),
-            JumpType::Js => flag(eflags, RflagsBits::SF),
-            JumpType::Jns => !flag(eflags, RflagsBits::SF),
-            JumpType::Jp => flag(eflags, RflagsBits::PF),
-            JumpType::Jnp => !flag(eflags, RflagsBits::PF),
-            JumpType::Jl => flag(eflags, RflagsBits::SF) != flag(eflags, RflagsBits::OF),
+            JumpType::Je => flag(eflags, Flags::ZeroFlag),
+            JumpType::Jne => !flag(eflags, Flags::ZeroFlag),
+            JumpType::Jb => flag(eflags, Flags::CarryFlag),
+            JumpType::Ja => !flag(eflags, Flags::CarryFlag) && !flag(eflags, Flags::ZeroFlag),
+            JumpType::Jbe => flag(eflags, Flags::CarryFlag) || flag(eflags, Flags::ZeroFlag),
+            JumpType::Js => flag(eflags, Flags::SignFlag),
+            JumpType::Jns => !flag(eflags, Flags::SignFlag),
+            JumpType::Jp => flag(eflags, Flags::ParityFlag),
+            JumpType::Jnp => !flag(eflags, Flags::ParityFlag),
+            JumpType::Jl => flag(eflags, Flags::SignFlag) != flag(eflags, Flags::OverflowFlag),
             JumpType::Jle => {
-                flag(eflags, RflagsBits::ZF)
-                    || (flag(eflags, RflagsBits::SF) != flag(eflags, RflagsBits::OF))
+                flag(eflags, Flags::ZeroFlag)
+                    || (flag(eflags, Flags::SignFlag) != flag(eflags, Flags::OverflowFlag))
             }
             JumpType::Jcxz | JumpType::Jecxz | JumpType::Jrcxz => rcx == 0,
-            JumpType::Jae => !flag(eflags, RflagsBits::CF),
+            JumpType::Jae => !flag(eflags, Flags::CarryFlag),
             JumpType::Jg => {
-                !flag(eflags, RflagsBits::ZF)
-                    && (flag(eflags, RflagsBits::SF) == flag(eflags, RflagsBits::OF))
+                !flag(eflags, Flags::ZeroFlag)
+                    && (flag(eflags, Flags::SignFlag) == flag(eflags, Flags::OverflowFlag))
             }
-            JumpType::Jge => flag(eflags, RflagsBits::SF) == flag(eflags, RflagsBits::OF),
+            JumpType::Jge => flag(eflags, Flags::SignFlag) == flag(eflags, Flags::OverflowFlag),
             JumpType::Jmpe => false,
-            JumpType::Jno => !flag(eflags, RflagsBits::OF),
-            JumpType::Jo => flag(eflags, RflagsBits::OF),
+            JumpType::Jno => !flag(eflags, Flags::OverflowFlag),
+            JumpType::Jo => flag(eflags, Flags::OverflowFlag),
         } {
             self.j_true
         } else {

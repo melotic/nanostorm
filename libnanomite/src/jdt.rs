@@ -1,12 +1,12 @@
 use alloc::vec::Vec;
 use bincode::{Decode, Encode};
-use hashbrown::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::{jump_data::JumpData, VirtAddr};
 
 #[derive(Debug)]
 pub struct JumpDataTable {
-    table: HashMap<VirtAddr, JumpData>,
+    table: FxHashMap<VirtAddr, JumpData>,
 }
 
 impl Decode for JumpDataTable {
@@ -14,7 +14,7 @@ impl Decode for JumpDataTable {
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let vec = Vec::<(VirtAddr, JumpData)>::decode(decoder)?;
-        let mut hashmap = HashMap::with_capacity(vec.len());
+        let mut hashmap = FxHashMap::default();
 
         for (key, value) in vec {
             hashmap.insert(key, value);
@@ -40,7 +40,7 @@ impl Encode for JumpDataTable {
 impl JumpDataTable {
     pub fn new() -> Self {
         Self {
-            table: HashMap::new(),
+            table: FxHashMap::default(),
         }
     }
 

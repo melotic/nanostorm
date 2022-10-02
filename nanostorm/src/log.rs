@@ -6,51 +6,15 @@ macro_rules! log {
     }
 }
 
-macro_rules! status {
-    ($($arg:tt)*) => {
-        log!("x".magenta(), $($arg)*)
-    }
-}
-
 macro_rules! success {
     ($($arg:tt)*) => {
         log!("+".bold().green(), $($arg)*)
     }
 }
 
-macro_rules! failure {
-    ($($arg:tt)*) => {
-        log!("-".bold().red(), $($arg)*)
-    }
-}
-
-macro_rules! debug {
-    ($($arg:tt)*) => {
-        log!("DEBUG".bold().red(), $($arg)*)
-    }
-}
-
 macro_rules! warning {
     ($($arg:tt)*) => {
         log!("!".bold().yellow(), $($arg)*)
-    }
-}
-
-macro_rules! error {
-    ($($arg:tt)*) => {
-        log!("ERROR".on_red(), $($arg)*)
-    }
-}
-
-macro_rules! exception {
-    ($($arg:tt)*) => {
-        log!("ERROR".on_red(), $($arg)*)
-    }
-}
-
-macro_rules! critical {
-    ($($arg:tt)*) => {
-        log!("CRITICAL".on_red(), $($arg)*)
     }
 }
 

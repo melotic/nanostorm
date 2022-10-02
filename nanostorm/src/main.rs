@@ -173,8 +173,8 @@ fn process_instructions(buffer: &mut [u8], offsets: &[(usize, usize)]) -> Result
         {
             nanomite = Some(place_nanomite(buffer, *offset, &instr)?);
         } else if buffer[*offset..*offset + instr.len()].contains(&0xCC) {
-            // nanomite = Some(place_fake_nanomite()?);
-            //fake_nanomite = true;
+            nanomite = Some(place_fake_nanomite()?);
+            fake_nanomite = true;
         }
 
         if let Some(n) = nanomite {
