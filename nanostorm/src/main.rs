@@ -5,7 +5,7 @@ mod vaddr_lookup;
 
 use bincode::config;
 use clap::Parser;
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{eyre, ContextCompat, Result};
 use color_eyre::{eyre::Context, owo_colors::OwoColorize};
 use ghidra_runner::InstrLocations;
 use goblin::Object;
@@ -19,6 +19,7 @@ use rayon::prelude::*;
 use std::cmp::max;
 use std::fs::File;
 use std::io::Write;
+use std::ops::Range;
 use std::{
     fs::{self},
     path::{Path, PathBuf},
@@ -32,13 +33,20 @@ use crate::vaddr_lookup::{ElfVirtualAddressor, PeVirtualAddressor};
 #[clap(author, version, about)]
 struct Args {
     #[clap(short, long)]
+    /// The path to the root Ghidra installation.
     ghidra_path: PathBuf,
 
     #[clap()]
+    /// The path to the binary to analyze.
     binary: PathBuf,
 
     #[clap(short, long)]
+    /// The path to the output file.
     output: Option<String>,
+
+    #[clap(short, long)]
+    /// Ranges of Virtual Addresses in hex to protect with nanomites.
+    ranges: Option<Vec<String>>,
 }
 
 #[derive(Debug)]
@@ -46,25 +54,62 @@ struct ParsedArgs {
     ghidra_path: PathBuf,
     binary: PathBuf,
     output: String,
+    ranges: Option<Vec<Range<VirtAddr>>>,
 }
 
-impl From<Args> for ParsedArgs {
-    fn from(args: Args) -> Self {
+impl TryFrom<Args> for ParsedArgs {
+    type Error = color_eyre::eyre::Error;
+
+    fn try_from(args: Args) -> Result<Self, Self::Error> {
         let output = match args.output {
-            Some(o) => o,
+            Some(output) => output,
             None => args
                 .binary
                 .file_name()
-                .unwrap()
+                .with_context(|| "Could not get file name")?
                 .to_str()
-                .unwrap()
-                .to_string(),
+                .with_context(|| "Could not convert file name to string")?
+                .to_owned(),
         };
-        ParsedArgs {
+
+        // Parse the ranges, prefixed by 0x
+        let ranges = match args.ranges {
+            Some(ranges) => Some(
+                ranges
+                    .into_iter()
+                    .map(|range| {
+                        let range = range.replace("0x", "");
+                        let range = range.split('-').collect::<Vec<_>>();
+
+                        if range.len() != 2 {
+                            return Err(eyre!("Invalid range: {}", range.join("-")));
+                        }
+
+                        let start = VirtAddr::from_str_radix(range[0], 16).with_context(|| {
+                            format!("Could not parse range start: {}", range[0])
+                        })?;
+
+                        let end = VirtAddr::from_str_radix(range[1], 16)
+                            .with_context(|| format!("Could not parse range end: {}", range[1]))?;
+
+                        // ensure start > end
+                        if start > end {
+                            return Err(eyre!("Invalid range: {}", range.join("-")));
+                        }
+
+                        Ok(start..end)
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+            None => None,
+        };
+
+        Ok(Self {
             ghidra_path: args.ghidra_path,
             binary: args.binary,
             output,
-        }
+            ranges,
+        })
     }
 }
 
@@ -90,10 +135,14 @@ fn find_headless_ghidra(ghidra_path: &Path) -> Result<PathBuf> {
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let cli = ParsedArgs::from(Args::parse());
+    let cli = ParsedArgs::try_from(Args::parse())?;
     let mut buffer = fs::read(&cli.binary)
         .wrap_err_with(|| format!("Could not read {}", cli.binary.display()))?;
-    let intrs = run_ghidra_disassembly(&find_headless_ghidra(&cli.ghidra_path)?, &cli.binary)?;
+    let intrs = run_ghidra_disassembly(
+        &find_headless_ghidra(&cli.ghidra_path)?,
+        &cli.binary,
+        &cli.ranges,
+    )?;
 
     process_binary(&mut buffer, &intrs, &cli.output)?;
 

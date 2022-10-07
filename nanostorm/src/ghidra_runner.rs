@@ -1,10 +1,12 @@
 use crate::eyre;
 use color_eyre::{eyre::ContextCompat, owo_colors::OwoColorize, Result};
 use indicatif::ProgressBar;
+use libnanomite::VirtAddr;
 use std::{
     env::current_dir,
     fs::{self, File},
     io::{BufRead, BufReader},
+    ops::Range,
     path::PathBuf,
     process::{Command, Stdio},
     time::Duration,
@@ -14,7 +16,11 @@ use uuid::Uuid;
 ///  Provides virtual address of where addresses are located in the binary.
 pub type InstrLocations = Vec<usize>;
 
-pub fn run_ghidra_disassembly(ghidra_bin: &PathBuf, binary: &PathBuf) -> Result<InstrLocations> {
+pub fn run_ghidra_disassembly(
+    ghidra_bin: &PathBuf,
+    binary: &PathBuf,
+    ranges: &Option<Vec<Range<VirtAddr>>>,
+) -> Result<InstrLocations> {
     let pb = ProgressBar::new_spinner();
     pb.set_message("Running Ghidra analysis".bold().to_string());
     pb.enable_steady_tick(Duration::from_millis(250));
@@ -74,7 +80,7 @@ pub fn run_ghidra_disassembly(ghidra_bin: &PathBuf, binary: &PathBuf) -> Result<
         return Err(eyre!("Ghidra disassembly failed"));
     }
 
-    let output = parse_ghidra_output(&script_output);
+    let output = parse_ghidra_output(&script_output, ranges);
 
     if fs::remove_file(&script_output).is_err() {
         warning!(
@@ -86,7 +92,10 @@ pub fn run_ghidra_disassembly(ghidra_bin: &PathBuf, binary: &PathBuf) -> Result<
     output
 }
 
-fn parse_ghidra_output(script_output: &PathBuf) -> Result<InstrLocations> {
+fn parse_ghidra_output(
+    script_output: &PathBuf,
+    ranges: &Option<Vec<Range<VirtAddr>>>,
+) -> Result<InstrLocations> {
     let pb = ProgressBar::new_spinner();
     pb.set_message(format!("{}", "Parsing Ghidra output".bold()));
     pb.enable_steady_tick(Duration::from_millis(250));
@@ -100,7 +109,17 @@ fn parse_ghidra_output(script_output: &PathBuf) -> Result<InstrLocations> {
         if line.contains("INFO") {
             if let Some(addr) = line.split_whitespace().last() {
                 let addr = addr.parse()?;
-                instrs.push(addr);
+
+                // check the range
+                if let Some(ranges) = ranges {
+                    for range in ranges {
+                        if range.contains(&addr) {
+                            instrs.push(addr);
+                        }
+                    }
+                } else {
+                    instrs.push(addr);
+                }
             }
         }
     }
