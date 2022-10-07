@@ -110,11 +110,7 @@ fn create_vaddr_lookup<'a>(buffer: &'a [u8]) -> Result<Box<dyn VirtualAddressor 
     }
 }
 
-fn process_binary<'a>(
-    buffer: &'a mut [u8],
-    instrs: &'a InstrLocations,
-    _output: &str,
-) -> Result<()> {
+fn process_binary(buffer: &mut [u8], instrs: &InstrLocations, _output: &str) -> Result<()> {
     info!("Ghidra reported {} instructions", instrs.len());
     let offsets = get_offsets(buffer, instrs)?;
 

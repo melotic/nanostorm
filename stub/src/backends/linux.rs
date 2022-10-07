@@ -32,6 +32,11 @@ fn parent(pid: Pid, jdt: JumpDataTable) {
     // wait for breakpoints
     loop {
         let status = waitpid(pid, None).unwrap();
+
+        // print RIP
+        let rip = ptrace::getregs(pid).unwrap().rip;
+        println!("RIP: {:#x}", rip);
+
         match status {
             WaitStatus::Stopped(_, Signal::SIGSEGV) => break,
             WaitStatus::Stopped(pid, Signal::SIGTRAP) => {

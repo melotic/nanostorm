@@ -1,5 +1,4 @@
-#[no_std]
-
+#![no_std]
 mod encrypted_jdt;
 mod jdt;
 mod jump_data;

@@ -3,15 +3,11 @@ use bincode::{Decode, Encode};
 use crate::jump_type::JumpType;
 
 pub enum Flags {
-    CarryFlag = 0x0001,
-    ParityFlag = 0x0004,
-    AdjustFlag = 0x0010,
-    ZeroFlag = 0x0040,
-    SignFlag = 0x0080,
-    TrapFlag = 0x0100,
-    InterruptEnableFlag = 0x0200,
-    DirectionFlag = 0x0400,
-    OverflowFlag = 0x0800,
+    Carry = 0x0001,
+    Parity = 0x0004,
+    Zero = 0x0040,
+    Sign = 0x0080,
+    Overflow = 0x0800,
 }
 #[derive(Encode, Decode, Copy, Clone, Debug)]
 pub struct JumpData {
@@ -38,30 +34,30 @@ impl JumpData {
         // todo check this
         if match self.jump_type {
             JumpType::Jmp => true,
-            JumpType::Je => flag(eflags, Flags::ZeroFlag),
-            JumpType::Jne => !flag(eflags, Flags::ZeroFlag),
-            JumpType::Jb => flag(eflags, Flags::CarryFlag),
-            JumpType::Ja => !flag(eflags, Flags::CarryFlag) && !flag(eflags, Flags::ZeroFlag),
-            JumpType::Jbe => flag(eflags, Flags::CarryFlag) || flag(eflags, Flags::ZeroFlag),
-            JumpType::Js => flag(eflags, Flags::SignFlag),
-            JumpType::Jns => !flag(eflags, Flags::SignFlag),
-            JumpType::Jp => flag(eflags, Flags::ParityFlag),
-            JumpType::Jnp => !flag(eflags, Flags::ParityFlag),
-            JumpType::Jl => flag(eflags, Flags::SignFlag) != flag(eflags, Flags::OverflowFlag),
+            JumpType::Je => flag(eflags, Flags::Zero),
+            JumpType::Jne => !flag(eflags, Flags::Zero),
+            JumpType::Jb => flag(eflags, Flags::Carry),
+            JumpType::Ja => !flag(eflags, Flags::Carry) && !flag(eflags, Flags::Zero),
+            JumpType::Jbe => flag(eflags, Flags::Carry) || flag(eflags, Flags::Zero),
+            JumpType::Js => flag(eflags, Flags::Sign),
+            JumpType::Jns => !flag(eflags, Flags::Sign),
+            JumpType::Jp => flag(eflags, Flags::Parity),
+            JumpType::Jnp => !flag(eflags, Flags::Parity),
+            JumpType::Jl => flag(eflags, Flags::Sign) != flag(eflags, Flags::Overflow),
             JumpType::Jle => {
-                flag(eflags, Flags::ZeroFlag)
-                    || (flag(eflags, Flags::SignFlag) != flag(eflags, Flags::OverflowFlag))
+                flag(eflags, Flags::Zero)
+                    || (flag(eflags, Flags::Sign) != flag(eflags, Flags::Overflow))
             }
             JumpType::Jcxz | JumpType::Jecxz | JumpType::Jrcxz => rcx == 0,
-            JumpType::Jae => !flag(eflags, Flags::CarryFlag),
+            JumpType::Jae => !flag(eflags, Flags::Carry),
             JumpType::Jg => {
-                !flag(eflags, Flags::ZeroFlag)
-                    && (flag(eflags, Flags::SignFlag) == flag(eflags, Flags::OverflowFlag))
+                !flag(eflags, Flags::Zero)
+                    && (flag(eflags, Flags::Sign) == flag(eflags, Flags::Overflow))
             }
-            JumpType::Jge => flag(eflags, Flags::SignFlag) == flag(eflags, Flags::OverflowFlag),
+            JumpType::Jge => flag(eflags, Flags::Sign) == flag(eflags, Flags::Overflow),
             JumpType::Jmpe => false,
-            JumpType::Jno => !flag(eflags, Flags::OverflowFlag),
-            JumpType::Jo => flag(eflags, Flags::OverflowFlag),
+            JumpType::Jno => !flag(eflags, Flags::Overflow),
+            JumpType::Jo => flag(eflags, Flags::Overflow),
         } {
             self.j_true
         } else {
