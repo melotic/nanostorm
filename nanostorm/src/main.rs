@@ -1,9 +1,11 @@
 #[macro_use]
 mod log;
+mod cli;
 mod ghidra_runner;
 mod vaddr_lookup;
-mod cli;
 
+use crate::ghidra_runner::run_ghidra_disassembly;
+use crate::vaddr_lookup::{ElfVirtualAddressor, PeVirtualAddressor};
 use bincode::config;
 use clap::Parser;
 use color_eyre::eyre::{eyre, Result};
@@ -18,12 +20,10 @@ use libnanomite::{JumpData, JumpDataTable, JumpType, VirtAddr};
 use rand::random;
 use rayon::prelude::*;
 use std::cmp::max;
+use std::fs;
 use std::fs::File;
 use std::io::Write;
-use std::fs;
 use vaddr_lookup::VirtualAddressor;
-use crate::ghidra_runner::run_ghidra_disassembly;
-use crate::vaddr_lookup::{ElfVirtualAddressor, PeVirtualAddressor};
 
 fn main() -> Result<()> {
     color_eyre::install()?;
