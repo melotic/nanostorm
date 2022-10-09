@@ -7,7 +7,7 @@ use std::{
     fs::{self, File},
     io::{BufRead, BufReader},
     ops::Range,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     time::Duration,
 };
@@ -127,4 +127,23 @@ fn parse_ghidra_output(
     pb.finish_with_message(format!("{}", "Ghidra output parsed.".bold()));
 
     Ok(instrs)
+}
+
+pub fn find_headless_ghidra(ghidra_path: &Path) -> Result<PathBuf> {
+    let bin_name = if cfg!(target_os = "windows") {
+        "analyzeHeadless.bat"
+    } else {
+        "analyzeHeadless"
+    };
+
+    let ghidra_headless = ghidra_path.join("support").join(bin_name);
+
+    if !ghidra_headless.exists() {
+        Err(eyre!(
+            "analyzeHeadless not found. Did you specify the correct Ghidra path?"
+        ))
+    } else {
+        success!("Ghidra headless path: {:?}", ghidra_headless);
+        Ok(ghidra_headless)
+    }
 }
