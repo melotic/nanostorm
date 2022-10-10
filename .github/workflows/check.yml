@@ -90,7 +90,7 @@ jobs:
         run: touch infected.bin
       - name: create jdt.bin
         run: touch jdt.bin
-      - name: cargo +${{ matrix.msrv }} check
+      - name: NANOSTORM_BIN=$(pwd)/infected.bin NANOSTORM_JDT=$(pwd)/jdt.bin cargo +${{ matrix.msrv }} check
         uses: actions-rs/cargo@v1
         with:
           command: check

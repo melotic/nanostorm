@@ -4,8 +4,8 @@ use bincode::config::{self};
 use stub::runtime_main;
 
 fn main() {
-    let bin = include_bytes!("../../infected.bin");
-    let jdt = include_bytes!("../../jdt.bin");
+    let bin = include_bytes!(env!("NANOSTORM_BIN"));
+    let jdt = include_bytes!(env!("NANOSTORM_JDT"));
 
     let jdt = bincode::decode_from_slice(jdt, config::standard())
         .unwrap()

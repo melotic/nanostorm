@@ -6,17 +6,21 @@ mod vaddr_lookup;
 
 use crate::ghidra_runner::run_ghidra_disassembly;
 use crate::vaddr_lookup::{ElfVirtualAddressor, PeVirtualAddressor};
-use bincode::config;
 use clap::Parser;
 use color_eyre::eyre::{eyre, Result};
 use color_eyre::{eyre::Context, owo_colors::OwoColorize};
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
 use ghidra_runner::{find_headless_ghidra, InstrLocations};
 use goblin::Object;
 use iced_x86::code_asm::CodeAssembler;
 use iced_x86::{
     Decoder, DecoderOptions, FlowControl, Formatter, Instruction, Mnemonic, NasmFormatter,
 };
-use libnanomite::{JumpData, JumpDataTable, JumpType, VirtAddr};
+use libnanomite::cereal::config;
+use libnanomite::{
+    cereal, to_option_bytes, EncryptedObject, JumpData, JumpDataTable, JumpType, VirtAddr,
+};
 use rand::random;
 use rayon::prelude::*;
 use std::cmp::max;
@@ -37,9 +41,72 @@ fn main() -> Result<()> {
         &cli.ranges,
     )?;
 
-    process_binary(&mut buffer, &intrs, &cli.output)?;
+    let (binary, jdt) = process_binary(&mut buffer, &intrs)?;
+
+    let binary = encrypt_compress_binary(&cli, binary)?;
+    let jdt_bytes = encrypt_compress_jdt(jdt, &cli)?;
+
+    // Write the binary and jump data table to disk
+    let mut binary_file = File::create(&cli.output)
+        .with_context(|| format!("Failed to create {}", cli.output.display()))?;
+    binary_file.write_all(to_option_bytes(cli.encrypt, cli.compress).as_ref())?;
+    binary_file.write_all(binary.as_slice())?;
+
+    let mut jdt_file = File::create(&cli.output.with_extension("jdt"))
+        .with_context(|| format!("Failed to create {}", cli.output.display()))?;
+    jdt_file.write_all(to_option_bytes(cli.encrypt, cli.compress).as_ref())?;
+    jdt_file.write_all(jdt_bytes.as_slice())?;
 
     Ok(())
+}
+
+fn encrypt_compress_binary(cli: &cli::ParsedArgs, binary: &[u8]) -> Result<Vec<u8>> {
+    let binary = if cli.compress {
+        let mut enc = ZlibEncoder::new(Vec::new(), Compression::best());
+        enc.write(binary)
+            .with_context(|| "Failed to write nanomite binary into compression buffer")?;
+        enc.finish()
+            .with_context(|| "Failed to compress nanomite binary")?
+    } else {
+        binary.to_owned()
+    };
+    let binary = if cli.encrypt {
+        let encrypted_binary = EncryptedObject::try_from(binary.as_slice())
+            .map_err(|e| eyre!(e))
+            .with_context(|| "failed to encrypt binary")?;
+        cereal::encode_to_vec(encrypted_binary, cereal::config::standard())?
+    } else {
+        binary
+    };
+    Ok(binary)
+}
+
+fn encrypt_compress_jdt(jdt: JumpDataTable, cli: &cli::ParsedArgs) -> Result<Vec<u8>> {
+    let jdt_bytes = cereal::encode_to_vec(jdt, config::standard())
+        .with_context(|| "failed to serialize jump data table")?;
+
+    let jdt_bytes = if cli.compress {
+        let mut enc = ZlibEncoder::new(Vec::new(), Compression::best());
+        enc.write(&jdt_bytes)
+            .with_context(|| "Failed to write nanomite binary into compression buffer")?;
+        enc.finish()
+            .with_context(|| "Failed to compress nanomite binary")?
+    } else {
+        jdt_bytes
+    };
+
+    let jdt_bytes = if cli.encrypt {
+        let encrypted_obj = EncryptedObject::try_from(jdt_bytes.as_slice())
+            .map_err(|e| eyre!(e))
+            .with_context(|| "failed to encrypt jump data table")?;
+
+        cereal::encode_to_vec(encrypted_obj, config::standard())
+            .with_context(|| "failed to serialize jump data table")?
+    } else {
+        jdt_bytes
+    };
+
+    Ok(jdt_bytes)
 }
 
 fn create_vaddr_lookup<'a>(buffer: &'a [u8]) -> Result<Box<dyn VirtualAddressor + Sync + 'a>> {
@@ -52,14 +119,17 @@ fn create_vaddr_lookup<'a>(buffer: &'a [u8]) -> Result<Box<dyn VirtualAddressor 
     }
 }
 
-fn process_binary(buffer: &mut [u8], instrs: &InstrLocations, _output: &str) -> Result<()> {
+fn process_binary<'a>(
+    buffer: &'a mut [u8],
+    instrs: &InstrLocations,
+) -> Result<(&'a [u8], JumpDataTable)> {
     info!("Ghidra reported {} instructions", instrs.len());
     let offsets = get_offsets(buffer, instrs)?;
 
     info!("Found {} instructions", offsets.len());
-    process_instructions(buffer, &offsets)?;
+    let result = process_instructions(buffer, &offsets)?;
 
-    Ok(())
+    Ok(result)
 }
 
 fn get_offsets(buffer: &mut [u8], instrs: &Vec<usize>) -> Result<Vec<(VirtAddr, usize)>> {
@@ -76,7 +146,10 @@ fn get_offsets(buffer: &mut [u8], instrs: &Vec<usize>) -> Result<Vec<(VirtAddr, 
     Ok(offsets)
 }
 
-fn process_instructions(buffer: &mut [u8], offsets: &[(usize, usize)]) -> Result<()> {
+fn process_instructions<'a>(
+    buffer: &'a mut [u8],
+    offsets: &[(usize, usize)],
+) -> Result<(&'a [u8], JumpDataTable)> {
     // Since we're modifying the buffer by placing nanomites, create a copy so we can
     // decode correctly.
     let orig_buffer = buffer.to_owned();
@@ -141,15 +214,7 @@ fn process_instructions(buffer: &mut [u8], offsets: &[(usize, usize)]) -> Result
         }
     }
 
-    // Write the infected binary to disk
-    let mut infected_file = File::create("infected.bin")?;
-    infected_file.write_all(buffer)?;
-
-    // Write the jump data table to disk
-    let mut jdt_file = File::create("jdt.bin")?;
-    bincode::encode_into_std_write(jdt, &mut jdt_file, config::standard())?;
-
-    Ok(())
+    Ok((buffer, jdt))
 }
 
 fn place_fake_nanomite() -> Result<JumpData> {

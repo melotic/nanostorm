@@ -1,6 +1,6 @@
 use clap::Parser;
 use color_eyre::eyre::Context;
-use color_eyre::eyre::{eyre, ContextCompat, Result};
+use color_eyre::eyre::{eyre, Result};
 use libnanomite::VirtAddr;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -18,17 +18,17 @@ pub(crate) struct Args {
 
     #[clap(short, long)]
     /// The path to the output file.
-    pub(crate) output: Option<String>,
+    pub(crate) output: Option<PathBuf>,
 
     #[clap(short, long)]
     /// Ranges of Virtual Addresses in hex to protect with nanomites.
     pub(crate) ranges: Option<Vec<String>>,
 
-    #[clap(short, long, default_value_t = true)]
+    #[clap(short, long)]
     /// Encrypt the Jump Data Table and the binary
     pub(crate) encrypt: bool,
 
-    #[clap(short, long, default_value_t = true)]
+    #[clap(short, long)]
     // Compress the jump data table and the binary
     pub(crate) compress: bool,
 }
@@ -37,7 +37,7 @@ pub(crate) struct Args {
 pub(crate) struct ParsedArgs {
     pub(crate) ghidra_path: PathBuf,
     pub(crate) binary: PathBuf,
-    pub(crate) output: String,
+    pub(crate) output: PathBuf,
     pub(crate) ranges: Option<Vec<Range<VirtAddr>>>,
     pub(crate) encrypt: bool,
     pub(crate) compress: bool,
@@ -49,13 +49,7 @@ impl TryFrom<Args> for ParsedArgs {
     fn try_from(args: Args) -> Result<Self, Self::Error> {
         let output = match args.output {
             Some(output) => output,
-            None => args
-                .binary
-                .file_name()
-                .with_context(|| "Could not get file name")?
-                .to_str()
-                .with_context(|| "Could not convert file name to string")?
-                .to_owned(),
+            None => args.binary.with_extension("nanomites"),
         };
 
         // Parse the ranges, prefixed by 0x
