@@ -46,6 +46,9 @@ jobs:
         run: touch jdt.bin
       - name: cargo clippy
         uses: actions-rs/clippy-check@v1
+        env:
+          NANOSTORM_BIN: $(pwd)/a.out
+          NANOSTORM_JDT: $(pwd)/jdt.bin
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
   doc:
