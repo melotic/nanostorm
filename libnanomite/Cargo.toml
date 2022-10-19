@@ -11,3 +11,4 @@ aes-gcm = "0.10.1"
 bincode = "2.0.0-rc.1"
 rand = "0.8.5"
 rustc-hash = "1"
+flate2 = { version = "1", features = ["zlib-ng"], default-features = false }

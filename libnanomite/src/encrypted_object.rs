@@ -1,7 +1,7 @@
 use aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes128Gcm, Nonce};
 use alloc::vec::Vec;
-use bincode::{Decode, Encode};
+use bincode::{config, Decode, Encode};
 
 use crate::AES_GCM_NONCE;
 
@@ -36,5 +36,16 @@ impl TryInto<Vec<u8>> for EncryptedObject {
             cipher.decrypt(Nonce::from_slice(AES_GCM_NONCE), self.ciphertext.as_ref())?;
 
         Ok(plaintext)
+    }
+}
+
+impl EncryptedObject {
+    pub fn decode<T: Decode>(self) -> Result<T, ()> {
+        let plaintext: Vec<u8> = self.try_into().map_err(|_| ())?;
+        Ok(
+            bincode::decode_from_slice(plaintext.as_slice(), config::standard())
+                .map_err(|_| ())?
+                .0,
+        )
     }
 }

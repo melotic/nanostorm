@@ -8,9 +8,11 @@ mod jump_type;
 
 pub use encrypted_jdt::EncryptedJumpDataTable;
 pub use encrypted_object::EncryptedObject;
+pub use flate2::*;
 pub use jdt::JumpDataTable;
 pub use jump_data::JumpData;
 pub use jump_type::JumpType;
+
 extern crate alloc;
 
 pub type VirtAddr = usize;

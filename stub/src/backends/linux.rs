@@ -34,8 +34,8 @@ fn parent(pid: Pid, jdt: JumpDataTable) {
         let status = waitpid(pid, None).unwrap();
 
         // print RIP
-        let rip = ptrace::getregs(pid).unwrap().rip;
-        println!("RIP: {:#x}", rip);
+        // let rip = ptrace::getregs(pid).unwrap().rip;
+        // println!("{:#?}", status);
 
         match status {
             WaitStatus::Stopped(_, Signal::SIGSEGV) => break,
@@ -86,7 +86,7 @@ fn child(bin: &[u8]) {
     let fd = memfd_create(&str, MemFdCreateFlag::empty()).unwrap();
 
     // write the binary to the fd
-    write(fd, bin).unwrap();
+    write(fd, bin);
 
     let args = std::env::args()
         .filter_map(|s| CString::new(s.as_bytes()).ok())

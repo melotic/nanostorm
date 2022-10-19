@@ -9,8 +9,6 @@ use crate::vaddr_lookup::{ElfVirtualAddressor, PeVirtualAddressor};
 use clap::Parser;
 use color_eyre::eyre::{eyre, Result};
 use color_eyre::{eyre::Context, owo_colors::OwoColorize};
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
 use ghidra_runner::{find_headless_ghidra, InstrLocations};
 use goblin::Object;
 use iced_x86::code_asm::CodeAssembler;
@@ -18,8 +16,10 @@ use iced_x86::{
     Decoder, DecoderOptions, FlowControl, Formatter, Instruction, Mnemonic, NasmFormatter,
 };
 use libnanomite::cereal::config;
+use libnanomite::write::ZlibEncoder;
 use libnanomite::{
-    cereal, to_option_bytes, EncryptedObject, JumpData, JumpDataTable, JumpType, VirtAddr,
+    cereal, to_option_bytes, Compression, EncryptedObject, JumpData, JumpDataTable, JumpType,
+    VirtAddr,
 };
 use rand::random;
 use rayon::prelude::*;
