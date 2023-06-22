@@ -549,6 +549,7 @@ dependencies = [
  "aead",
  "aes-gcm",
  "bincode",
+ "flate2",
  "rand",
  "rustc-hash",
 ]
@@ -608,7 +609,6 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "color-eyre",
- "flate2",
  "goblin",
  "iced-x86",
  "indicatif",
@@ -631,6 +631,15 @@ dependencies = [
  "libc",
  "memoffset",
  "pin-utils",
+]
+
+[[package]]
+name = "ntapi"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c28774a7fd2fbb4f0babd8237ce554b73af68021b5f695a3cebd6c59bac0980f"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]
@@ -928,7 +937,10 @@ dependencies = [
  "bincode",
  "libnanomite",
  "nix",
+ "ntapi",
  "procfs",
+ "rand",
+ "winapi",
 ]
 
 [[package]]

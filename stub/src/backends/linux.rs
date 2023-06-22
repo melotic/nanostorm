@@ -35,7 +35,7 @@ fn parent(pid: Pid, jdt: JumpDataTable) {
 
         // print RIP
         // let rip = ptrace::getregs(pid).unwrap().rip;
-        // println!("{:#?}", status);
+        println!("{:#?}", status);
 
         match status {
             WaitStatus::Stopped(_, Signal::SIGSEGV) => break,
